@@ -149,7 +149,6 @@ def analyze_symbol(symbol, market_type):
         rr = round(abs(fib['tp3'] - price) / risk, 2)
         if rr < MIN_RR:
             return None
-        wave_size = round((swing_high - swing_low) / swing_low * 100, 1)
         return {
             'symbol':          symbol,
             'market_type':     market_type,
@@ -164,7 +163,6 @@ def analyze_symbol(symbol, market_type):
             'fib_618':         round(fib['ote_high'], 6),
             'fib_786':         round(fib['ote_low'], 6),
             'rr':              rr,
-            'wave_size':       wave_size,
             'timeframe':       '4H/1H/15M',
             'tradingview_url': build_tv_url(symbol),
         }
