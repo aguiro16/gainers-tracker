@@ -2,35 +2,11 @@ import anthropic
 from datetime import datetime, date, timedelta
 from telegram_bot import send_message, format_daily_report
 from config import ANTHROPIC_API_KEY
-import sqlite3
-
-DB_PATH = "signals.db"
+from database import get_closed_signals_in_range, get_open_signals_count
 
 # ─────────────────────────────────────────────
-# جلب الإشارات المغلقة فقط ضمن نطاق زمني
+# جلب الإشارات
 # ─────────────────────────────────────────────
-def get_closed_signals_in_range(from_dt, to_dt):
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row
-    c = conn.cursor()
-    c.execute("""
-        SELECT * FROM signals
-        WHERE status = 'CLOSED'
-          AND closed_at >= ?
-          AND closed_at < ?
-    """, (from_dt, to_dt))
-    rows = [dict(r) for r in c.fetchall()]
-    conn.close()
-    return rows
-
-def get_open_signals_count():
-    conn = sqlite3.connect(DB_PATH)
-    c = conn.cursor()
-    c.execute("SELECT COUNT(*) FROM signals WHERE status = 'OPEN'")
-    count = c.fetchone()[0]
-    conn.close()
-    return count
-
 def get_today_signals():
     today_start = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
     today_end   = today_start + timedelta(days=1)
@@ -52,10 +28,10 @@ def get_week_signals():
 # حساب الإحصائيات
 # ─────────────────────────────────────────────
 def calc_stats(signals, label):
-    open_count = get_open_signals_count()
-    wins   = [s for s in signals if s['pnl_pct'] and s['pnl_pct'] > 0]
-    losses = [s for s in signals if s['pnl_pct'] and s['pnl_pct'] < 0]
-    total_pnl = sum(s['pnl_pct'] for s in signals if s['pnl_pct'])
+    open_count   = get_open_signals_count()
+    wins         = [s for s in signals if s['pnl_pct'] and s['pnl_pct'] > 0]
+    losses       = [s for s in signals if s['pnl_pct'] and s['pnl_pct'] < 0]
+    total_pnl    = sum(s['pnl_pct'] for s in signals if s['pnl_pct'])
     best_signal  = "—"
     worst_signal = "—"
     if wins:
@@ -105,11 +81,11 @@ def build_daily_prompt(stats):
 # بناء البرومبت الأسبوعي
 # ─────────────────────────────────────────────
 def build_weekly_prompt(stats):
-    signals  = stats['signals']
-    wins     = [s for s in signals if s['pnl_pct'] and s['pnl_pct'] > 0]
-    losses   = [s for s in signals if s['pnl_pct'] and s['pnl_pct'] < 0]
-    closed   = wins + losses
-    win_rate = round(len(wins) / len(closed) * 100, 1) if closed else 0
+    signals      = stats['signals']
+    wins         = [s for s in signals if s['pnl_pct'] and s['pnl_pct'] > 0]
+    losses       = [s for s in signals if s['pnl_pct'] and s['pnl_pct'] < 0]
+    closed       = wins + losses
+    win_rate     = round(len(wins) / len(closed) * 100, 1) if closed else 0
     symbol_stats = {}
     for s in closed:
         sym = s['symbol']
@@ -122,8 +98,8 @@ def build_weekly_prompt(stats):
         symbol_stats[sym]['pnl'] += s['pnl_pct']
     best_symbols  = sorted(symbol_stats.items(), key=lambda x: x[1]['pnl'], reverse=True)[:3]
     worst_symbols = sorted(symbol_stats.items(), key=lambda x: x[1]['pnl'])[:3]
-    long_trades  = [s for s in closed if s['direction'] == 'LONG']
-    short_trades = [s for s in closed if s['direction'] == 'SHORT']
+    long_trades   = [s for s in closed if s['direction'] == 'LONG']
+    short_trades  = [s for s in closed if s['direction'] == 'SHORT']
     long_wr  = round(len([s for s in long_trades  if s['pnl_pct'] > 0]) / len(long_trades)  * 100, 1) if long_trades  else 0
     short_wr = round(len([s for s in short_trades if s['pnl_pct'] > 0]) / len(short_trades) * 100, 1) if short_trades else 0
     return f"""أنت خبير تحليل تقني متخصص في فيبوناتشي OTE.
@@ -160,12 +136,12 @@ def analyze_with_claude(prompt):
 # تنسيق التقرير الأسبوعي
 # ─────────────────────────────────────────────
 def format_weekly_report(stats, claude_analysis):
-    total    = stats['total']
-    wins     = stats['wins']
-    win_rate = round(wins / total * 100, 1) if total > 0 else 0
+    total       = stats['total']
+    wins        = stats['wins']
+    win_rate    = round(wins / total * 100, 1) if total > 0 else 0
     is_positive = stats['total_pnl'] >= 0
-    header  = "📊✅" if is_positive else "📊❌"
-    pnl_str = f"+{stats['total_pnl']:.2f}%" if is_positive else f"{stats['total_pnl']:.2f}%"
+    header      = "📊✅" if is_positive else "📊❌"
+    pnl_str     = f"+{stats['total_pnl']:.2f}%" if is_positive else f"{stats['total_pnl']:.2f}%"
     msg = f"""
 {header} <b>التقرير الأسبوعي</b>
 ━━━━━━━━━━━━━━━━━━━━━
@@ -193,7 +169,7 @@ def format_weekly_report(stats, claude_analysis):
 # ─────────────────────────────────────────────
 def send_daily_report():
     print("Generating daily report...")
-    stats = get_daily_stats()
+    stats       = get_daily_stats()
     is_negative = stats['total_pnl'] < 0 or stats['losses'] > stats['wins']
     claude_analysis = None
     if is_negative and stats['losses'] > 0:
