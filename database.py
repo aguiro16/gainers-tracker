@@ -1,6 +1,6 @@
 import sqlite3
 import json
-from datetime import datetime
+from datetime import datetime, timedelta
 
 DB_PATH = "signals.db"
 
@@ -92,13 +92,26 @@ def get_open_signals():
     conn.close()
     return rows
 
-def get_today_signals():
+# ✅ عدد المفتوحة حالياً للتقارير
+def get_open_signals_count():
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute("SELECT COUNT(*) FROM signals WHERE status = 'OPEN'")
+    count = c.fetchone()[0]
+    conn.close()
+    return count
+
+# ✅ المغلقة فقط ضمن نطاق زمني للتقارير
+def get_closed_signals_in_range(from_dt, to_dt):
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
     c = conn.cursor()
-    from datetime import timedelta
-    since = (datetime.utcnow() - timedelta(hours=24)).isoformat()
-    c.execute("SELECT * FROM signals WHERE created_at >= ?", (since,))
+    c.execute("""
+        SELECT * FROM signals
+        WHERE status = 'CLOSED'
+          AND closed_at >= ?
+          AND closed_at < ?
+    """, (from_dt, to_dt))
     rows = [dict(r) for r in c.fetchall()]
     conn.close()
     return rows
